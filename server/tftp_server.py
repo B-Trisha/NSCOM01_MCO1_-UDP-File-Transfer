@@ -179,18 +179,13 @@ def handle_packet(sock, data, addr, server_state):
                 receive_file(sock, addr, filename)
             
             return server_state
-    elif msg_type == FIN:
-        print(f"Received FIN from {addr}, sending FIN-ACK...")
-        # Send FIN-ACK to client
-        fin_response = encode_packet(FIN_ACK, seq)
-        sock.sendto(fin_response, addr)
+        if msg_type == FIN:
+            print(f"Received FIN from {addr}, sending FIN-ACK...")
+            fin_response = encode_packet(FIN_ACK, seq)
+            sock.sendto(fin_response, addr)
+            print("Server connection closed. Back to LISTEN.")
+            return STATE_LISTEN
 
-        return STATE_FIN_WAIT
-
-    elif server_state == STATE_FIN_WAIT:
-        if msg_type == ACK:
-            print(f"Received FIN-ACK from {addr}, closing connection.")
-            return STATE_LISTEN # ready for new client
 
 """
 Main server loop.
