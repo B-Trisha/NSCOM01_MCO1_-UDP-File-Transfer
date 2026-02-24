@@ -1,4 +1,5 @@
 import struct
+import socket
 
 # -----------------------------------------------------------------------
 # HEADER FORMAT ---------------------------------------------------------
@@ -86,6 +87,9 @@ def decode_packet(data):
         print(f"Error decoding packet: {e}")
         return None, 0, b""
 
+# -----------------------------------------------------------------------
+# ERROR HANDLING --------------------------------------------------------
+# -----------------------------------------------------------------------
 """
 Encodes an error packet.
 
@@ -121,6 +125,9 @@ def decode_error(payload):
     except:
         return -1, payload.decode(errors = 'replace')
 
+# -----------------------------------------------------------------------
+# REQUEST HANDLING ------------------------------------------------------
+# -----------------------------------------------------------------------
 """
 Encodes a file request packet.
 
@@ -155,3 +162,65 @@ def decode_request(payload):
         return "", decoded
     except:
         return "", payload.decode(errors = 'replace')
+
+# -----------------------------------------------------------------------
+# STOP-AND-WAIT RELIABILITY ---------------------------------------------
+# -----------------------------------------------------------------------
+"""
+Sends DATA packet and waits for ACK.
+Retries on timeout up to max_retries
+
+Arguments:
+ - sock: UDP socket
+ - data: Payload data to send
+ - addr: Destination address
+ - seq: Sequence number
+ - max_retries: Maximum retry attempts
+ 
+Returns:
+ - True if Ack received, False if max retries exceeded
+"""
+def send_data_reliable(sock, data, addr, seq, max_retries = MAX_RETRIES):
+    retries = 0
+
+    while retries < max_retries:
+        packet = encode_packet(DATA, seq, data)
+        sock.sendto(packet, addr)
+
+        try:
+            ack_data, _ = sock.recvfrom(1024)
+            msg_type, ack_seq, _ = decode_packet(ack_data)
+
+            # ACK received
+            if msg_type == ACK and ack_seq == seq:
+                return True
+
+        except socket.timeout:
+            retries += 1
+            print(f"Timeout waiting for ACK {seq}, retry {retries}/{max_retries}")
+
+    # Max retries exceeded
+    return False
+
+"""
+Receives Data packet and sends ACK.
+Handles duplicate packets by resending ACK.
+
+Arguments:
+ - sock: UDP socket
+ 
+Returns:
+ - Tuple (seq, payload, addr) if DATA received, else (None, None, None) 
+"""
+def receive_data_and_ack(sock):
+    data, addr = sock.recvfrom(CHUNK_SIZE + 9)
+    msg_type, seq, payload = decode_packet(data)
+
+    # Send ACK for this sequence number
+    if msg_type == DATA:
+        ack_packet = encode_packet(ACK, seq)
+        sock.sendto(ack_packet, addr)
+
+        return seq, payload, addr
+
+    return None, None, None
