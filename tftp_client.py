@@ -21,6 +21,7 @@ DEFAULT_PORT = 5005
 STATE_CLOSED = 0
 STATE_SYN_SENT = 1
 STATE_ESTABLISHED = 2
+STATE_FIN_WAIT = 3
 
 def start_client():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

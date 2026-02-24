@@ -11,13 +11,13 @@ HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 # -----------------------------------------------------------------------
 # MESSAGE TYPES ---------------------------------------------------------
 # -----------------------------------------------------------------------
-SYN = 1         # Connection establishment request
-SYN_ACK = 2     # Acknowledgement of SYN
-ACK = 3         # General Acknowledgement
-DATA = 4        # Data payload transfer
-FIN = 5         # Connection termination request
-ERROR = 6       # Error notification
-REQUEST = 7     # File request (download/upload)
+SYN = 0         # Connection establishment request
+SYN_ACK = 1     # Acknowledgement of SYN
+ACK = 2         # General Acknowledgement
+DATA = 3        # Data payload transfer
+FIN = 4         # Connection termination request
+ERROR = 5       # Error notification
+REQUEST = 6     # File request (download/upload)
 
 # -----------------------------------------------------------------------
 # ERROR CODES (custom) --------------------------------------------------
