@@ -1,39 +1,67 @@
 import socket
-from protocol import encode_packet, decode_packet, SYN, SYN_ACK, ACK
+from protocol import (
+    encode_packet,
+    decode_packet,
+    SYN,
+    SYN_ACK,
+    ACK,
+    TIMEOUT,
+    MAX_RETRIES
+)
 
-# Defaults
+# -----------------------------------------------------------------------
+# DEFAULTS --------------------------------------------------------------
+# -----------------------------------------------------------------------
 DEFAULT_IP = "127.0.0.1"
 DEFAULT_PORT = 5005
 
-def start_client(ip, port):
+# -----------------------------------------------------------------------
+# CLIENT STATES ---------------------------------------------------------
+# -----------------------------------------------------------------------
+STATE_CLOSED = 0
+STATE_SYN_SENT = 1
+STATE_ESTABLISHED = 2
+
+def start_client():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(5)
+    sock.settimeout(TIMEOUT)
     return sock
 
 def handshake(sock, server_addr):
+    client_state = STATE_CLOSED
     seq = 0
+    retries = 0
+
     print("Sending SYN...")
-    sock.sendto(encode_packet(SYN, seq), server_addr)
 
-    try:
-        data, addr = sock.recvfrom(1024)
-        msg_type, seq, payload = decode_packet(data)
+    while retries < MAX_RETRIES:
+        sock.sendto(encode_packet(SYN, seq), server_addr)
+        client_state = STATE_SYN_SENT
 
-        if msg_type == SYN_ACK:
-            print("Received SYN-ACK")
-            # Send ACK back
-            sock.sendto(encode_packet(ACK, seq), server_addr)
-            print("Handshake complete!")
-            return True  
-        else:
-            print("Unexpected response")
-            return False
+        try:
+            data, addr = sock.recvfrom(1024)
+            msg_type, recv_seq, payload = decode_packet(data)
 
-    except socket.timeout:
-        print("Handshake failed (timeout)")
-        return False
+            if msg_type == SYN_ACK:
+                print(f"Received SYN-ACK from {addr}")
+                # Send final ACK
+                sock.sendto(encode_packet(ACK, recv_seq), server_addr)
+                print("Handshake complete!")
+                return True, STATE_ESTABLISHED
+            else:
+                print("Unexpected packet, retrying...")
 
-def menu(sock, server_addr):
+        except socket.timeout:
+            print(f"Timeout, retrying ({retries + 1}/{MAX_RETRIES})...")
+            retries += 1
+
+    print("Handshake failed: Max retries reached")
+    return False, STATE_CLOSED
+
+def menu():
+    sock = start_client()
+    server_addr = (DEFAULT_IP, DEFAULT_PORT)
+    client_state = STATE_CLOSED
     connected = False
 
     while True:
@@ -46,7 +74,7 @@ def menu(sock, server_addr):
         choice = input("Select option: ")
 
         if choice == "1":
-            connected = handshake(sock, server_addr)
+            connected, client_state = handshake(sock, server_addr)
 
         elif choice == "2":
             if connected:
@@ -69,11 +97,5 @@ def menu(sock, server_addr):
         else:
             print("Invalid option.")
 
-def main():
-    sock = start_client(DEFAULT_IP, DEFAULT_PORT)
-    server_addr = (DEFAULT_IP, DEFAULT_PORT)
-    menu(sock, server_addr)
-    sock.close()
-
 if __name__ == "__main__":
-    main()
+    menu()
