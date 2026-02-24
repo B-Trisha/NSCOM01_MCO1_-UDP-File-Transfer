@@ -1,4 +1,9 @@
 import socket
+import sys, os
+
+# Add root folder to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from protocol import (
     encode_packet,
     decode_packet,
@@ -8,6 +13,8 @@ from protocol import (
     SYN,
     SYN_ACK,
     ACK,
+    FIN,
+    FIN_ACK,
     DATA,
     REQUEST,
     ERROR,
@@ -16,7 +23,8 @@ from protocol import (
     MAX_RETRIES,
     ERR_FILE_NOT_FOUND,
     OP_DOWNLOAD,
-    send_data_reliable
+    send_data_reliable,
+    receive_data_and_ack
 )
 
 # -----------------------------------------------------------------------
@@ -89,6 +97,44 @@ def send_file(sock, addr, filepath):
         return
 
 
+"""
+Receives a file from client using Stop-and-Wait reliability.
+
+Arguments:
+    - sock: UDP socket
+    - addr: Client address
+    - filename: Path to save the uploaded file
+"""
+def receive_file(sock, addr, filename):
+    try:
+        expected_seq = 0  
+
+        print(f"Ready to receive file: {filename}")
+
+        # Open the file once in write mode to avoid duplication
+        with open(filename, "wb") as f:
+            while True:
+                # Receive a chunk reliably
+                seq, payload, addr = receive_data_and_ack(sock)
+
+                # Not a DATA packet
+                if seq is None:
+                    continue
+
+                # End of file
+                if len(payload) == 0:
+                    print("EOF received. File upload complete.")
+                    break
+
+                # Write the chunk sequentially
+                f.write(payload)
+                print(f"Received chunk seq = {seq}, len = {len(payload)}")
+                expected_seq += 1
+
+        print(f"File uploaded: {filename}")
+
+    except Exception as e:
+        print(f"Error receiving file: {e}")
 
 """
 Handles incoming packets based on server state.
@@ -126,18 +172,25 @@ def handle_packet(sock, data, addr, server_state):
             operation, filename = decode_request(payload)
 
             if operation == "GET":
-                print(f"Download request for: {filename}")
+                print(f"\nDownload request for: {filename}")
+                send_file(sock, addr, filename)
             elif operation == "PUT":
-                print(f"Upload request for: {filename}")
-                # TODO: Implement Upload
+                print(f"\nUpload request for: {filename}")
+                receive_file(sock, addr, filename)
+            
+            return server_state
+    elif msg_type == FIN:
+        print(f"Received FIN from {addr}, sending FIN-ACK...")
+        # Send FIN-ACK to client
+        fin_response = encode_packet(FIN_ACK, seq)
+        sock.sendto(fin_response, addr)
 
-        elif msg_type == DATA:
-            print("change this later")
-            # TODO: Handle incoming data for upload
+        return STATE_FIN_WAIT
 
-        return server_state
-
-    return server_state
+    elif server_state == STATE_FIN_WAIT:
+        if msg_type == ACK:
+            print(f"Received FIN-ACK from {addr}, closing connection.")
+            return STATE_LISTEN # ready for new client
 
 """
 Main server loop.
