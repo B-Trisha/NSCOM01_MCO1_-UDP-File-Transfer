@@ -1,55 +1,157 @@
 import struct
 
-# B = 1 byte (Type), I = 4 bytes (Seq), I = 4 bytes (Length)
+# -----------------------------------------------------------------------
+# HEADER FORMAT ---------------------------------------------------------
+# -----------------------------------------------------------------------
+# Packet Header: Type (1 byte) | Seq Num = (4 bytes) | Length (4 bytes)
+# Total header size: 9 bytes
 HEADER_FORMAT = "!BII"
-HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 7 bytes
+HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
-# TFTP Error Codes
-ERR_CODES = { 
-    0: 'Not defined, see error message (if any).',
-    1: 'File not found.',
-    2: 'Access violation.',
-    3: 'Disk full or allocation exceeded.',
-    4: 'Illegal TFTP operation.',
-    5: 'Unknown transfer ID.',
-    6: 'File already exists.',
-    7: 'No such user.',
+# -----------------------------------------------------------------------
+# MESSAGE TYPES ---------------------------------------------------------
+# -----------------------------------------------------------------------
+SYN = 1         # Connection establishment request
+SYN_ACK = 2     # Acknowledgement of SYN
+ACK = 3         # General Acknowledgement
+DATA = 4        # Data payload transfer
+FIN = 5         # Connection termination request
+ERROR = 6       # Error notification
+REQUEST = 7     # File request (download/upload)
+
+# -----------------------------------------------------------------------
+# ERROR CODES (custom) --------------------------------------------------
+# -----------------------------------------------------------------------
+ERR_FILE_NOT_FOUND = 1
+ERR_SESSION_MISMATCH = 2
+
+ERROR_MESSAGES = {
+    ERR_FILE_NOT_FOUND: "File not found",
+    ERR_SESSION_MISMATCH: "Session mismatch"
 }
 
-# TFTP Operation Codes
-OPCODES = {
-    1: "RRQ", 
-    2: "WRQ", 
-    3: "DATA", 
-    4: "ACK", 
-    5: "ERROR"
-}
+# -----------------------------------------------------------------------
+# OPERATION TYPES (for REQUEST packets) ---------------------------------
+# -----------------------------------------------------------------------
+OP_DOWNLOAD = b"GET"
+OP_UPLOAD = b"PUT"
 
-# TFTP Default Values
-DEFAULT_TFTP_BLK_SIZE = 512
-DEFAULT_TFTP_TIMEOUT = 5
-DEFAULT_TFTP_PORT = 69
+# -----------------------------------------------------------------------
+# TRANSFER PARAMETERS ---------------------------------------------------
+# -----------------------------------------------------------------------
+CHUNK_SIZE = 1024   # Max payload size /packet
+TIMEOUT = 2         # Seconds before timeout
+MAX_RETRIES = 5     # Max retransmission attempts
 
-# Message Types
-SYN = 1
-SYN_ACK = 2
-DATA = 3
-ACK = 4
-FIN = 5
-ERROR = 6
+# -----------------------------------------------------------------------
+# PACKET ENCODING/DECODING ----------------------------------------------
+# -----------------------------------------------------------------------
+"""
+Encodes packet with header and payload.
 
-def encode_packet(msg_type, seq, payload=b""):
+Arguments:
+ - msg_type: Message type (SYN, ACK, DATA, etc.)
+ - seq: Sequence Number
+ - payload: Binary payload data
+ 
+Returns:
+ - Encoded packet as bytes
+"""
+def encode_packet(msg_type, seq, payload = b""):
     length = len(payload)
     header = struct.pack(HEADER_FORMAT, msg_type, seq, length)
     return header + payload
 
+"""
+Decodes packet from bytes to components.
+
+Arguments:
+ - data: Raw packet bytes
+ 
+Returns:
+ - Tuple (msg_type, seq, payload)
+"""
 def decode_packet(data):
-    header = data[:HEADER_SIZE]
-    payload = data[HEADER_SIZE:]
+    try:
+        header = data[:HEADER_SIZE]
+        payload = data[HEADER_SIZE:]
 
-    msg_type, seq, length = struct.unpack(HEADER_FORMAT, header)
+        msg_type, seq, length = struct.unpack(HEADER_FORMAT, header)
 
-    if len(payload) != length:
-        print("Warning: payload length mismatch!")
+        if len(payload) != length:
+            print(f"Warning: payload length mismatch (expected {length}, got {len(payload)})")
 
-    return msg_type, seq, payload
+        return msg_type, seq, payload
+    except struct.error as e:
+        print(f"Error decoding packet: {e}")
+        return None, 0, b""
+
+"""
+Encodes an error packet.
+
+Arguments:
+ - error_code: Error code int
+ - error_message: Error description string
+ 
+Returns:
+ - Encoded ERROR packet as bytes
+"""
+def encode_error(error_code, error_message):
+    msg = f"{error_code}:{error_message}".encode()
+    return encode_packet(ERROR, 0, msg)
+
+"""
+Decodes error payload.
+
+Arguments:
+ - payload: Error payload bytes
+ 
+Returns:
+ - Tuple (error_code, error_message)
+"""
+def decode_error(payload):
+    try:
+        decoded = payload.decode()
+        parts = decoded.split(":", 1)
+
+        if len(parts) == 2:
+            return int(parts[0]), parts[1]
+
+        return -1, decoded
+    except:
+        return -1, payload.decode(errors = 'replace')
+
+"""
+Encodes a file request packet.
+
+Arguments:
+ - filename: Name of file
+ - operation: OP_DOWNLOAD / OP_UPLOAD
+ 
+Returns:
+ - Encoded REQUEST packet as bytes
+"""
+def encode_request(filename, operation):
+    msg = f"{operation.decode()}:{filename}".encode()
+    return encode_packet(REQUEST, 0, msg)
+
+"""
+Decodes request payload.
+
+Arguments:
+ - payload: Request payload bytes
+
+Returns:
+ - Tuple (operation, filename)
+"""
+def decode_request(payload):
+    try:
+        decoded = payload.decode()
+        parts = decoded.split(":", 1)
+
+        if len(parts) == 2:
+            return parts[0], parts[1]
+
+        return "", decoded
+    except:
+        return "", payload.decode(errors = 'replace')
