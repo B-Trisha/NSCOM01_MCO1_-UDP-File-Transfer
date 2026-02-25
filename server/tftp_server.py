@@ -8,21 +8,16 @@ from protocol import (
     encode_packet,
     decode_packet,
     encode_error,
-    encode_request,
     decode_request,
     SYN,
     SYN_ACK,
     ACK,
     FIN,
     FIN_ACK,
-    DATA,
     REQUEST,
-    ERROR,
     TIMEOUT,
     CHUNK_SIZE,
-    MAX_RETRIES,
     ERR_FILE_NOT_FOUND,
-    OP_DOWNLOAD,
     send_data_reliable,
     receive_data_and_ack
 )
@@ -39,7 +34,6 @@ DEFAULT_PORT = 5005
 STATE_LISTEN = 0
 STATE_SYN_RCVD = 1
 STATE_ESTABLISHED = 2
-STATE_FIN_WAIT = 3
 
 """
 Starts the UDP server socket.
@@ -84,7 +78,7 @@ def send_file(sock, addr, filepath):
                 success = send_data_reliable(sock, chunk, addr, seq)
 
                 if not success:
-                    print("Failed to send chunk, closing connection")
+                    print("Failed to send chunk, giving up")
                     return
 
                 print(f"Sent chunk seq = {seq}, len = {len(chunk)}")
@@ -92,6 +86,7 @@ def send_file(sock, addr, filepath):
         print(f"File sent complete: {filepath}")
 
     except FileNotFoundError:
+        print(f"File not found: {filepath}")
         error = encode_error(ERR_FILE_NOT_FOUND, "File not found")
         sock.sendto(error, addr)
         return
@@ -105,7 +100,7 @@ Arguments:
     - addr: Client address
     - filename: Path to save the uploaded file
 """
-def receive_file(sock, addr, filename):
+def receive_file(sock, _, filename):
     try:
         expected_seq = 0  
 
@@ -115,7 +110,7 @@ def receive_file(sock, addr, filename):
         with open(filename, "wb") as f:
             while True:
                 # Receive a chunk reliably
-                seq, payload, addr = receive_data_and_ack(sock)
+                seq, payload, _ = receive_data_and_ack(sock)
 
                 # Not a DATA packet
                 if seq is None:
@@ -158,6 +153,8 @@ def handle_packet(sock, data, addr, server_state):
             response = encode_packet(SYN_ACK, seq)
             sock.sendto(response, addr)
 
+            print(f"Sent SYN-ACK to {addr}")
+
             return STATE_SYN_RCVD
 
     elif server_state == STATE_SYN_RCVD:
@@ -185,6 +182,8 @@ def handle_packet(sock, data, addr, server_state):
             sock.sendto(fin_response, addr)
             print("Server connection closed. Back to LISTEN.")
             return STATE_LISTEN
+
+    return server_state
 
 
 """

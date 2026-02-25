@@ -1,5 +1,6 @@
 import struct
 import socket
+import random
 
 # -----------------------------------------------------------------------
 # HEADER FORMAT ---------------------------------------------------------
@@ -61,6 +62,7 @@ Returns:
 """
 def encode_packet(msg_type, seq, payload = b""):
     length = len(payload)
+
     header = struct.pack(HEADER_FORMAT, msg_type, seq, length)
     return header + payload
 
@@ -185,6 +187,12 @@ def send_data_reliable(sock, data, addr, seq, max_retries = MAX_RETRIES):
     retries = 0
 
     while retries < max_retries:
+        # Drop packets for testing
+        if drop_packet():
+            print(f"[TEST] Dropped packet seq = {seq}")
+            retries += 1
+            continue
+
         packet = encode_packet(DATA, seq, data)
         sock.sendto(packet, addr)
 
@@ -215,7 +223,13 @@ Returns:
 """
 def receive_data_and_ack(sock):
     data, addr = sock.recvfrom(CHUNK_SIZE + 9)
+
+    if drop_packet():
+        print(f"[TEST] Dropped incoming packet")
+        return None, None, None
+
     msg_type, seq, payload = decode_packet(data)
+
 
     # Send ACK for this sequence number
     if msg_type == DATA:
@@ -225,3 +239,24 @@ def receive_data_and_ack(sock):
         return seq, payload, addr
 
     return None, None, None
+
+# -----------------------------------------------------------------------
+# PACKET DROP TOGGLE (TESTING) ------------------------------------------
+# -----------------------------------------------------------------------
+# Set to True to drop packets
+DROP_PACKETS = False
+
+# 50%
+DROP_RATE = 0.5
+
+"""
+Determines whether to drop packets for testing.
+
+Returns:
+ - True if packet should be dropped
+"""
+def drop_packet():
+    if not DROP_PACKETS:
+        return False
+
+    return random.random() < DROP_RATE

@@ -12,17 +12,15 @@ from protocol import (
     SYN,
     SYN_ACK,
     ACK,
-    FIN_ACK,
     FIN,
+    FIN_ACK,
     DATA,
-    REQUEST,
     ERROR,
     TIMEOUT,
     MAX_RETRIES,
     CHUNK_SIZE,
     OP_DOWNLOAD,
     OP_UPLOAD,
-    receive_data_and_ack,
     send_data_reliable
 )
 
@@ -36,9 +34,7 @@ DEFAULT_PORT = 5005
 # CLIENT STATES ---------------------------------------------------------
 # -----------------------------------------------------------------------
 STATE_CLOSED = 0
-STATE_SYN_SENT = 1
-STATE_ESTABLISHED = 2
-STATE_FIN_WAIT = 3
+STATE_ESTABLISHED = 1
 
 """
 Creates and configures UDP client socket.
@@ -62,7 +58,6 @@ Returns:
  - Tuple (success, state)
 """
 def handshake(sock, server_addr):
-    client_state = STATE_CLOSED
     seq = 0
     retries = 0
 
@@ -70,7 +65,6 @@ def handshake(sock, server_addr):
 
     while retries < MAX_RETRIES:
         sock.sendto(encode_packet(SYN, seq), server_addr)
-        client_state = STATE_SYN_SENT
 
         try:
             data, addr = sock.recvfrom(1024)
@@ -94,7 +88,6 @@ def handshake(sock, server_addr):
 
 
 def close_connection(sock, server_addr):
-    client_state = STATE_ESTABLISHED
     retries = 0
     seq = 0
 
@@ -103,19 +96,20 @@ def close_connection(sock, server_addr):
     while retries < MAX_RETRIES:
         # Send FIN packet
         sock.sendto(encode_packet(FIN, seq), server_addr)
-        client_state = STATE_FIN_WAIT
 
         try:
             data, addr = sock.recvfrom(1024)
             msg_type, recv_seq, payload = decode_packet(data)
 
             if msg_type == FIN_ACK:
+                print(f"Received FIN-ACK from {addr}")
+
                 # Send final ACK
                 sock.sendto(encode_packet(ACK, recv_seq), server_addr)
                 print("Connection closed.")
-                client_state = STATE_CLOSED
-                sock.close()
-                return
+
+                # Success flag
+                return True
             else:
                 print("Unexpected packet, retrying...")
 
@@ -124,7 +118,9 @@ def close_connection(sock, server_addr):
             print(f"Timeout waiting for FIN-ACK ({retries}/{MAX_RETRIES})...")
 
     print("FIN handshake failed. Closing socket anyway.")
-    sock.close()
+
+    # Failure flag
+    return False
 
 
 """
@@ -147,36 +143,45 @@ def download_file(sock, server_addr, filename):
 
     print("Receiving file...")
 
-    while True:
-        seq, payload, addr = receive_data_and_ack(sock)
+    try:
+        while True:
+            data, addr = sock.recvfrom(CHUNK_SIZE + 9)
+            msg_type, seq, payload = decode_packet(data)
 
-        # Not a DATA packet
-        if seq is None:
-            continue
+            # Check for ERROR packet
+            if msg_type == ERROR:
+                code, msg = decode_error(payload)
+                print(f"Server Error: {msg}")
+                return
 
-        # Check for ERROR packet
-        if payload.startswith(b'ERR'):
-            code, msg = decode_error(payload)
-            print(f"Server Error: {msg}")
-            return
+            # Send ACK for DATA packet
+            if msg_type == DATA:
+                ack_packet = encode_packet(ACK, seq)
+                sock.sendto(ack_packet, addr)
 
-        # End of file
-        if len(payload) == 0:
-            print("EOF received")
-            break
+            # Not a DATA packet
+            if seq is None:
+                continue
 
-        print(f"Received chunk seq = {seq}, len = {len(payload)}")
-        received_data[seq] = payload
+            # End of file
+            if len(payload) == 0:
+                print("EOF received")
+                break
 
-        # Write sequential data to file
-        while expected_seq in received_data:
-            # Clear file before writing to avoid duplication
-            with open(filename, "wb") as f:
+            print(f"Received chunk seq = {seq}, len = {len(payload)}")
+            received_data[seq] = payload
+
+        # Write all chunks to file, open once
+        with open(filename, "wb") as f:
+            while expected_seq in received_data:
                 f.write(received_data[expected_seq])
-            del received_data[expected_seq]
-            expected_seq += 1
+                del received_data[expected_seq]
+                expected_seq += 1
 
-    print(f"Download complete: {filename}")
+        print(f"Download complete: {filename}")
+    except socket.timeout:
+        print("Transfer failed: Server not responding (timeout)")
+        return
 
 """
 Uploads file from client using Stop-and-Wait reliability.
@@ -219,6 +224,10 @@ def upload_file(sock, server_addr, filename):
             print(f"Sent chunk seq = {expected_seq}, len = {len(chunk)}")
             expected_seq += 1
 
+        # Send empty chunk as EOF signal
+        print("Sending EOF...")
+        sock.sendto(encode_packet(DATA, expected_seq, b""), server_addr)
+
         print(f"Upload complete: {filename} ")
 
     except FileNotFoundError:
@@ -232,6 +241,9 @@ def menu():
     server_addr = (DEFAULT_IP, DEFAULT_PORT)
     client_state = STATE_CLOSED
     connected = False
+
+    # To track socket
+    socket_closed = False
 
     try:
         while True:
@@ -262,16 +274,22 @@ def menu():
 
             elif choice == "4":
                 if connected and client_state == STATE_ESTABLISHED:
-                    close_connection(sock, server_addr)
+                    success = close_connection(sock, server_addr)
+
+                    if success:
+                        socket_closed = True
+
                 else:
                     print("Closing socket...")
-                    sock.close()
+                    socket_closed = True
                 break
 
             else:
                 print("Invalid option.")
     finally:
-        sock.close()
+        if not socket_closed:
+            sock.close()
+
         print("Socket closed.")
 
 if __name__ == "__main__":
