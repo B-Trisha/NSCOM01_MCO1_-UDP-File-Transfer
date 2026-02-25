@@ -87,7 +87,7 @@ This section illustrates the sequence of message exchanges between the Client an
 ---
 
 #### A. Connection Establishment
-
+```
 CLIENT                                     SERVER
   |                                           |
   |--- SYN ---------------------------------->|  
@@ -95,6 +95,7 @@ CLIENT                                     SERVER
   |<-- SYN-ACK -------------------------------|
   |                                           |  
   |--- SYN ---------------------------------->| 
+```
 Client State: STATE_ESTABLISHED  
 Server State: STATE_ESTABLISHED  
 
@@ -108,7 +109,7 @@ Description:
 ---
 
 #### B. File Download 
-
+```
 CLIENT                                     SERVER
   |                                           |
   |--- REQUEST(GET filename)----------------->|  
@@ -125,7 +126,7 @@ CLIENT                                     SERVER
   |<-- DATA (seq=n)---------------------------|
   |                                           |  
   |--- ACK (n) ------------------------------>|  
-   
+```  
 Description:
 
 1. The Client sends a GET request specifying the filename.
@@ -137,7 +138,7 @@ Description:
 ---
 
 #### B. File Upload 
-
+```
 CLIENT                                     SERVER
   |                                           |
   |--- REQUEST(PUT filename)----------------->|  
@@ -154,7 +155,7 @@ CLIENT                                     SERVER
   |<-- DATA (seq=n, empty payload)------------|
   |                                           |  
   |--- ACK (n) ------------------------------>|  
-
+```
 Description:
 
 1. The Client sends a PUT request with the filename.
@@ -166,7 +167,7 @@ Description:
 ---
 
 #### D. Connection Termination 
-
+```
 CLIENT                                     SERVER
   |                                           |
   |--- FIN ---------------------------------->|  
@@ -174,6 +175,7 @@ CLIENT                                     SERVER
   |<-- FIN-ACK -------------------------------|
   |                                           |  
   |--- ACK ---------------------------------->| 
+```
 
 Client State: STATE_CLOSED  
 Server State: STATE_LISTEN  
