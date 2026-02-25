@@ -205,9 +205,11 @@ def upload_file(sock, server_addr, filename):
         with open(filename, "rb") as f:
             while True:
                 chunk = f.read(CHUNK_SIZE)
-                file_data[seq] = chunk
+
                 if len(chunk) == 0:  # EOF marker
                     break
+
+                file_data[seq] = chunk
                 seq += 1
 
         # Now send the chunks sequentially 
@@ -226,7 +228,22 @@ def upload_file(sock, server_addr, filename):
 
         # Send empty chunk as EOF signal
         print("Sending EOF...")
-        sock.sendto(encode_packet(DATA, expected_seq, b""), server_addr)
+        eof_sent = False
+        eof_retries = 0
+        while not eof_sent and eof_retries < MAX_RETRIES:
+            sock.sendto(encode_packet(DATA, expected_seq, b""), server_addr)
+            try:
+                ack_data, _ = sock.recvfrom(1024)
+                msg_type, ack_seq, _ = decode_packet(ack_data)
+                if msg_type == ACK and ack_seq == expected_seq:
+                    eof_sent = True
+            except socket.timeout:
+                eof_retries += 1
+                print(f"Timeout waiting for EOF ACK, retry {eof_retries}/{MAX_RETRIES}")
+
+        if not eof_sent:
+            print("Failed to send EOF, aborting upload.")
+            return
 
         print(f"Upload complete: {filename} ")
 

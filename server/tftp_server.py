@@ -106,6 +106,10 @@ def receive_file(sock, _, filename):
 
         print(f"Ready to receive file: {filename}")
 
+        if os.path.exists(filename):
+            os.remove(filename)
+            print(f"Removed existing file: {filename}")
+
         # Open the file once in write mode to avoid duplication
         with open(filename, "wb") as f:
             while True:
@@ -114,6 +118,10 @@ def receive_file(sock, _, filename):
 
                 # Not a DATA packet
                 if seq is None:
+                    continue
+
+                if seq != expected_seq:
+                    print(f"Received duplicate/out-of-order packet seq = {seq}, expected = {expected_seq}. Ignoring.")
                     continue
 
                 # End of file
